@@ -159,7 +159,7 @@ async fn scan_all_inner(
 }
 
 /// Decode an encoded project path from the directory name.
-/// Claude Code encodes paths like `-Users-daiki-Projects-foo` → `/Users/daiki/Projects/foo`
+/// Claude Code encodes paths like `-Users-john-Projects-foo` → `/Users/john/Projects/foo`
 fn decode_project_path(encoded: &str) -> String {
     if encoded.starts_with('-') {
         // Replace leading dash and internal dashes with /
@@ -176,16 +176,16 @@ mod tests {
     #[test]
     fn test_decode_project_path() {
         assert_eq!(
-            decode_project_path("-Users-daiki-Projects-foo"),
-            "/Users/daiki/Projects/foo"
+            decode_project_path("-Users-john-foo"),
+            "/Users/john/foo"
         );
     }
 
     #[test]
     fn test_decode_project_path_no_leading_dash() {
         assert_eq!(
-            decode_project_path("Users-daiki-Projects-foo"),
-            "Users/daiki/Projects/foo"
+            decode_project_path("Users-john-foo"),
+            "Users/john/foo"
         );
     }
 }
