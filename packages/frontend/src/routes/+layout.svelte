@@ -9,8 +9,10 @@
 <div class="min-h-screen">
   <header class="border-b border-slate-700 bg-slate-900/50 px-6 py-3">
     <div class="flex items-center justify-between">
-      <a href="/" class="flex items-center gap-2 text-sm font-bold text-slate-100">
-        <span class="text-base">&#x1f916;</span>
+      <a
+        href="/"
+        class="flex items-center gap-2 text-sm font-bold text-slate-100"
+      >
         Agents Dashboard
       </a>
       <div class="flex items-center gap-3">
