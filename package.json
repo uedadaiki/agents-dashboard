@@ -1,0 +1,19 @@
+{
+  "name": "agents-dashboard",
+  "private": true,
+  "workspaces": [
+    "packages/shared",
+    "packages/frontend"
+  ],
+  "scripts": {
+    "dev:backend": "cargo run --bin server --manifest-path packages/backend/Cargo.toml",
+    "dev:frontend": "cd packages/frontend && bun run dev",
+    "dev": "bun run dev:backend & bun run dev:frontend",
+    "build:backend": "cargo build --release --manifest-path packages/backend/Cargo.toml",
+    "build:frontend": "cd packages/frontend && bun run build",
+    "build": "bun run build:backend && bun run build:frontend",
+    "typecheck": "cd packages/frontend && bun run typecheck",
+    "test:backend": "cargo test --manifest-path packages/backend/Cargo.toml",
+    "gen:types": "cargo run --bin gen-schema --manifest-path packages/backend/Cargo.toml && npx json-schema-to-typescript --unreachableDefinitions packages/backend/schema/all.json -o packages/shared/src/types/generated.ts"
+  }
+}

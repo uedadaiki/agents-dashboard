@@ -1,0 +1,561 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "AgentMessage": {
+      "properties": {
+        "content": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "role": {
+          "$ref": "#/definitions/MessageRole"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/definitions/MessageType"
+        }
+      },
+      "required": [
+        "content",
+        "id",
+        "role",
+        "sessionId",
+        "timestamp",
+        "type"
+      ],
+      "type": "object"
+    },
+    "AgentSessionDetail": {
+      "properties": {
+        "cumulativeUsage": {
+          "$ref": "#/definitions/CumulativeUsage"
+        },
+        "currentTask": {
+          "type": "string"
+        },
+        "gitStatus": {
+          "$ref": "#/definitions/GitStatus"
+        },
+        "lastActivityAt": {
+          "type": "string"
+        },
+        "messages": {
+          "items": {
+            "$ref": "#/definitions/AgentMessage"
+          },
+          "type": "array"
+        },
+        "model": {
+          "type": "string"
+        },
+        "projectName": {
+          "type": "string"
+        },
+        "projectPath": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "startedAt": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/definitions/AgentStateType"
+        },
+        "workingDirectory": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "cumulativeUsage",
+        "currentTask",
+        "gitStatus",
+        "lastActivityAt",
+        "messages",
+        "model",
+        "projectName",
+        "projectPath",
+        "provider",
+        "sessionId",
+        "startedAt",
+        "state",
+        "workingDirectory"
+      ],
+      "title": "AgentSessionDetail",
+      "type": "object"
+    },
+    "AgentSessionSummary": {
+      "properties": {
+        "cumulativeUsage": {
+          "$ref": "#/definitions/CumulativeUsage"
+        },
+        "currentTask": {
+          "type": "string"
+        },
+        "gitStatus": {
+          "$ref": "#/definitions/GitStatus"
+        },
+        "lastActivityAt": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "projectName": {
+          "type": "string"
+        },
+        "projectPath": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "startedAt": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/definitions/AgentStateType"
+        },
+        "workingDirectory": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "cumulativeUsage",
+        "currentTask",
+        "gitStatus",
+        "lastActivityAt",
+        "model",
+        "projectName",
+        "projectPath",
+        "provider",
+        "sessionId",
+        "startedAt",
+        "state",
+        "workingDirectory"
+      ],
+      "type": "object"
+    },
+    "AgentStateType": {
+      "enum": [
+        "running",
+        "idle",
+        "permission_waiting",
+        "error",
+        "stopped"
+      ],
+      "type": "string"
+    },
+    "ClientEvent": {
+      "oneOf": [
+        {
+          "properties": {
+            "sessionId": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "subscribe:session"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "sessionId",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "sessionId": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "unsubscribe:session"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "sessionId",
+            "type"
+          ],
+          "type": "object"
+        }
+      ],
+      "title": "ClientEvent"
+    },
+    "CumulativeUsage": {
+      "properties": {
+        "cacheCreationTokens": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "cacheReadTokens": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "estimatedCost": {
+          "format": "double",
+          "type": "number"
+        },
+        "inputTokens": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "outputTokens": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "cacheCreationTokens",
+        "cacheReadTokens",
+        "estimatedCost",
+        "inputTokens",
+        "outputTokens"
+      ],
+      "type": "object"
+    },
+    "GitStatus": {
+      "properties": {
+        "additions": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "branch": {
+          "type": "string"
+        },
+        "deletions": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "additions",
+        "branch",
+        "deletions"
+      ],
+      "title": "GitStatus",
+      "type": "object"
+    },
+    "MessageRole": {
+      "enum": [
+        "user",
+        "assistant",
+        "system"
+      ],
+      "type": "string"
+    },
+    "MessageType": {
+      "enum": [
+        "text",
+        "tool_use",
+        "tool_result",
+        "thinking",
+        "state_change",
+        "error"
+      ],
+      "type": "string"
+    },
+    "SearchMatch": {
+      "properties": {
+        "content": {
+          "type": "string"
+        },
+        "messageRole": {
+          "$ref": "#/definitions/MessageRole"
+        },
+        "messageType": {
+          "$ref": "#/definitions/MessageType"
+        },
+        "scope": {
+          "$ref": "#/definitions/SearchScope"
+        },
+        "timestamp": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "content",
+        "messageRole",
+        "messageType",
+        "scope",
+        "timestamp"
+      ],
+      "type": "object"
+    },
+    "SearchResponse": {
+      "properties": {
+        "query": {
+          "type": "string"
+        },
+        "results": {
+          "items": {
+            "$ref": "#/definitions/SessionSearchResult"
+          },
+          "type": "array"
+        },
+        "totalSessions": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "query",
+        "results",
+        "totalSessions"
+      ],
+      "title": "SearchResponse",
+      "type": "object"
+    },
+    "SearchScope": {
+      "enum": [
+        "project_name",
+        "current_task",
+        "working_directory",
+        "content"
+      ],
+      "type": "string"
+    },
+    "ServerEvent": {
+      "oneOf": [
+        {
+          "properties": {
+            "sessions": {
+              "items": {
+                "$ref": "#/definitions/AgentSessionSummary"
+              },
+              "type": "array"
+            },
+            "type": {
+              "enum": [
+                "sessions:init"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "sessions",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "session": {
+              "$ref": "#/definitions/AgentSessionSummary"
+            },
+            "type": {
+              "enum": [
+                "session:discovered"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "session",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "sessionId": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "session:removed"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "sessionId",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "current": {
+              "$ref": "#/definitions/AgentStateType"
+            },
+            "previous": {
+              "$ref": "#/definitions/AgentStateType"
+            },
+            "session": {
+              "$ref": "#/definitions/AgentSessionSummary"
+            },
+            "sessionId": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "session:state_changed"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "current",
+            "previous",
+            "session",
+            "sessionId",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "message": {
+              "$ref": "#/definitions/AgentMessage"
+            },
+            "sessionId": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "session:new_message"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "message",
+            "sessionId",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "messages": {
+              "items": {
+                "$ref": "#/definitions/AgentMessage"
+              },
+              "type": "array"
+            },
+            "sessionId": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "session:messages_init"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "messages",
+            "sessionId",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "sessionId": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "session:usage_updated"
+              ],
+              "type": "string"
+            },
+            "usage": {
+              "$ref": "#/definitions/CumulativeUsage"
+            }
+          },
+          "required": [
+            "sessionId",
+            "type",
+            "usage"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "gitStatus": {
+              "$ref": "#/definitions/GitStatus"
+            },
+            "sessionId": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "session:git_status_updated"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "gitStatus",
+            "sessionId",
+            "type"
+          ],
+          "type": "object"
+        }
+      ],
+      "title": "ServerEvent"
+    },
+    "SessionSearchResult": {
+      "properties": {
+        "matchCount": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "matches": {
+          "items": {
+            "$ref": "#/definitions/SearchMatch"
+          },
+          "type": "array"
+        },
+        "session": {
+          "$ref": "#/definitions/AgentSessionSummary"
+        }
+      },
+      "required": [
+        "matchCount",
+        "matches",
+        "session"
+      ],
+      "type": "object"
+    }
+  },
+  "title": "AgentsDashboard",
+  "type": "object"
+}

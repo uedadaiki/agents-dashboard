@@ -1,0 +1,9 @@
+node_modules/
+.svelte-kit/
+build/
+dist/
+*.png
+.playwright-mcp/
+
+# Rust
+packages/backend/target/
