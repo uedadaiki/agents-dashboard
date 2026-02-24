@@ -1,4 +1,5 @@
 import type { AgentMessage, AgentSessionSummary, AgentStateType, CumulativeUsage, SearchResponse, SearchScope, SessionSearchResult, ServerEvent } from "@agents-dashboard/shared";
+import { API_BASE } from "../config.js";
 
 const ALL_SCOPES: SearchScope[] = ["project_name", "current_task", "working_directory", "content"];
 
@@ -95,7 +96,7 @@ class AgentsStore {
 
   async fetchMessages(sessionId: string): Promise<void> {
     try {
-      const res = await fetch(`http://${window.location.hostname}:3001/api/sessions/${sessionId}`);
+      const res = await fetch(`${API_BASE}/api/sessions/${sessionId}`);
       if (!res.ok) return;
       const detail = await res.json();
       if (detail.messages?.length) {
@@ -120,7 +121,7 @@ class AgentsStore {
     try {
       const scopeParam = this.searchScopes.join(",");
       const res = await fetch(
-        `http://${window.location.hostname}:3001/api/search?q=${encodeURIComponent(query)}&scope=${scopeParam}`,
+        `${API_BASE}/api/search?q=${encodeURIComponent(query)}&scope=${scopeParam}`,
       );
       if (!res.ok) return;
       const data: SearchResponse = await res.json();

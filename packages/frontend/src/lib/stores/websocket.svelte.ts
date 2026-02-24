@@ -1,6 +1,7 @@
 import { WebSocketClient } from "../services/websocket-client.js";
 import { notificationService } from "../services/notification-service.js";
 import { agentsStore } from "./agents.svelte.js";
+import { WS_URL } from "../config.js";
 
 class WebSocketStore {
   connected = $state(false);
@@ -56,6 +57,5 @@ export const wsStore = new WebSocketStore();
 
 // Auto-connect in the browser
 if (typeof window !== "undefined") {
-  const wsUrl = `ws://${window.location.hostname}:3001/ws`;
-  wsStore.connect(wsUrl);
+  wsStore.connect(WS_URL);
 }
