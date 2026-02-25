@@ -2,6 +2,10 @@
 
 Real-time monitoring dashboard for AI agents — tracks Claude Code sessions via JSONL log files.
 
+![Dashboard](docs/screenshot-dashboard.png)
+
+![Session Detail](docs/screenshot-detail.png)
+
 ## Features
 
 - Automatic discovery and real-time monitoring of Claude Code sessions

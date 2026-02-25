@@ -1,9 +1,17 @@
 <script lang="ts">
   import "../app.css";
   import { wsStore } from "$lib/stores/websocket.svelte.js";
+  import { agentsStore } from "$lib/stores/agents.svelte.js";
+  import { isMockMode, mockSessions, mockSessionMessages } from "$lib/mock-data.js";
   import NotificationSettings from "$lib/components/NotificationSettings.svelte";
 
   let { children } = $props();
+
+  if (isMockMode()) {
+    agentsStore.sessions = mockSessions;
+    agentsStore.sessionMessages = mockSessionMessages;
+    wsStore.connected = true;
+  }
 </script>
 
 <div class="min-h-screen">

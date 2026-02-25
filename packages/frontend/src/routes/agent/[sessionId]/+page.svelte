@@ -2,6 +2,7 @@
   import { page } from "$app/state";
   import { agentsStore } from "$lib/stores/agents.svelte.js";
   import { wsStore } from "$lib/stores/websocket.svelte.js";
+  import { isMockMode } from "$lib/mock-data.js";
   import AgentStatusBadge from "$lib/components/AgentStatusBadge.svelte";
   import MessageLog from "$lib/components/MessageLog.svelte";
   import TokenUsageChart from "$lib/components/TokenUsageChart.svelte";
@@ -10,7 +11,7 @@
   const messages = $derived(sessionId ? agentsStore.getMessages(sessionId) : []);
 
   $effect(() => {
-    if (!sessionId) return;
+    if (!sessionId || isMockMode()) return;
     agentsStore.fetchMessages(sessionId);
     wsStore.subscribe(sessionId);
     return () => wsStore.unsubscribeSession(sessionId);

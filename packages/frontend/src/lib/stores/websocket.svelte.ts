@@ -55,7 +55,7 @@ class WebSocketStore {
 
 export const wsStore = new WebSocketStore();
 
-// Auto-connect in the browser
-if (typeof window !== "undefined") {
+// Auto-connect in the browser (skip in mock mode)
+if (typeof window !== "undefined" && !new URLSearchParams(window.location.search).has("mock")) {
   wsStore.connect(WS_URL);
 }
