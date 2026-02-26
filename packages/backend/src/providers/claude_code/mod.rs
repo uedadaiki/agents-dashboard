@@ -20,7 +20,7 @@ use jsonl_parser::RawEntry;
 use message_mapper::{extract_model, extract_session_metadata, extract_usage, map_entry};
 use session_discovery::{DiscoveredSession, DiscoveryEvent, SessionDiscovery};
 use state_machine::{check_time_based_transitions, process_entry, StateContext};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 
@@ -32,6 +32,7 @@ struct TrackedSession {
     model: String,
     emitted: bool,
     last_git_diff_check: i64,
+    last_process_check: i64,
     /// The project path from session discovery (decoded from directory name).
     /// Unlike summary.project_path which gets updated from JSONL cwd,
     /// this stays stable and is used to group sessions by project.
@@ -354,6 +355,7 @@ async fn handle_session_found(
         model: "unknown".to_string(),
         emitted: false,
         last_git_diff_check: 0,
+        last_process_check: 0,
         discovery_project_path: discovered.project_path.clone(),
     };
 
@@ -547,12 +549,89 @@ fn parse_shortstat(output: &str) -> Option<(u64, u64)> {
     Some((additions, deletions))
 }
 
+/// Parse `ps -eo pid,comm` output and return PIDs of processes whose comm contains "claude".
+fn parse_ps_claude_pids(output: &str) -> Vec<u32> {
+    let mut pids = Vec::new();
+    for line in output.lines() {
+        let line = line.trim();
+        let mut parts = line.splitn(2, char::is_whitespace);
+        let pid_str = match parts.next() {
+            Some(s) => s.trim(),
+            None => continue,
+        };
+        let comm = match parts.next() {
+            Some(s) => s.trim(),
+            None => continue,
+        };
+        if let Ok(pid) = pid_str.parse::<u32>() {
+            if comm.contains("claude") {
+                pids.push(pid);
+            }
+        }
+    }
+    pids
+}
+
+/// Parse `lsof -Fn` output and return the set of cwd paths.
+/// lsof -Fn output format: lines starting with 'p' (PID) and 'n' (name/path).
+fn parse_lsof_cwds(output: &str) -> HashSet<String> {
+    let mut cwds = HashSet::new();
+    for line in output.lines() {
+        if let Some(path) = line.strip_prefix('n') {
+            let path = path.trim();
+            if !path.is_empty() {
+                cwds.insert(path.to_string());
+            }
+        }
+    }
+    cwds
+}
+
+/// Get the set of working directories for all running Claude processes.
+/// Returns None if commands fail (safe fallback — skip process check).
+/// Returns Some(empty set) if no claude processes found.
+async fn get_active_claude_cwds() -> Option<HashSet<String>> {
+    // Step 1: Get PIDs of claude processes
+    let ps_output = tokio::process::Command::new("ps")
+        .args(["-eo", "pid,comm"])
+        .output()
+        .await
+        .ok()?;
+    if !ps_output.status.success() {
+        return None;
+    }
+    let ps_str = String::from_utf8_lossy(&ps_output.stdout);
+    let pids = parse_ps_claude_pids(&ps_str);
+    if pids.is_empty() {
+        return Some(HashSet::new());
+    }
+
+    // Step 2: Get cwds via lsof
+    let pid_args: Vec<String> = pids.iter().map(|p| p.to_string()).collect();
+    let pid_csv = pid_args.join(",");
+    let lsof_output = tokio::process::Command::new("lsof")
+        .args(["-a", "-d", "cwd", "-p", &pid_csv, "-Fn"])
+        .output()
+        .await
+        .ok()?;
+    if !lsof_output.status.success() {
+        return None;
+    }
+    let lsof_str = String::from_utf8_lossy(&lsof_output.stdout);
+    Some(parse_lsof_cwds(&lsof_str))
+}
+
+const PROCESS_CHECK_INTERVAL_MS: i64 = 10_000;
+
 async fn check_timers(
     sessions: &Arc<RwLock<HashMap<String, TrackedSession>>>,
     event_tx: &mpsc::UnboundedSender<ProviderEvent>,
 ) {
-    // Collect git diff targets while holding the lock
+    // Collect git diff targets and process check candidates while holding the lock
     let mut git_diff_targets: Vec<(String, String)> = Vec::new();
+    let mut needs_process_check = false;
+    // (session_id, working_directory) for sessions that may need process-based stop
+    let mut process_check_candidates: Vec<(String, String)> = Vec::new();
 
     {
         let mut sessions = sessions.write().await;
@@ -576,8 +655,9 @@ async fn check_timers(
                 });
             }
 
-            // Check if git diff is needed
             let state = session.state_ctx.state;
+
+            // Check if git diff is needed
             if (state == AgentStateType::Idle || state == AgentStateType::PermissionWaiting)
                 && !session.summary.working_directory.is_empty()
                 && (now_ms - session.last_git_diff_check) > 30_000
@@ -588,8 +668,59 @@ async fn check_timers(
                     session.summary.working_directory.clone(),
                 ));
             }
+
+            // Collect candidates for process-based stop detection
+            if matches!(
+                state,
+                AgentStateType::Running
+                    | AgentStateType::Idle
+                    | AgentStateType::PermissionWaiting
+                    | AgentStateType::Error
+            ) && !session.summary.working_directory.is_empty()
+                && (now_ms - session.last_process_check) > PROCESS_CHECK_INTERVAL_MS
+            {
+                session.last_process_check = now_ms;
+                needs_process_check = true;
+                process_check_candidates.push((
+                    session_id.clone(),
+                    session.summary.working_directory.clone(),
+                ));
+            }
         }
     }
+
+    // Lock released — run process check
+    if needs_process_check {
+        if let Some(active_cwds) = get_active_claude_cwds().await {
+            let mut sessions = sessions.write().await;
+            for (session_id, wd) in &process_check_candidates {
+                if !active_cwds.contains(wd.as_str()) {
+                    if let Some(session) = sessions.get_mut(session_id) {
+                        // Double-check state hasn't changed while lock was released
+                        let prev = session.state_ctx.state;
+                        if matches!(
+                            prev,
+                            AgentStateType::Running
+                                | AgentStateType::Idle
+                                | AgentStateType::PermissionWaiting
+                                | AgentStateType::Error
+                        ) {
+                            session.state_ctx.state = AgentStateType::Stopped;
+                            session.summary.state = AgentStateType::Stopped;
+                            if session.emitted {
+                                let _ = event_tx.send(ProviderEvent::StateChanged {
+                                    session_id: session_id.clone(),
+                                    previous: prev,
+                                    current: AgentStateType::Stopped,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Lock released — run git diff concurrently
     if !git_diff_targets.is_empty() {
         let mut handles = Vec::new();
@@ -646,5 +777,63 @@ mod tests {
     fn test_parse_shortstat_empty() {
         assert_eq!(parse_shortstat(""), Some((0, 0)));
         assert_eq!(parse_shortstat("  "), Some((0, 0)));
+    }
+
+    #[test]
+    fn test_parse_ps_claude_pids_typical() {
+        let output = "  PID COMM\n  501 zsh\n 1234 claude\n 5678 node\n 9012 claude\n";
+        let pids = parse_ps_claude_pids(output);
+        assert_eq!(pids, vec![1234, 9012]);
+    }
+
+    #[test]
+    fn test_parse_ps_claude_pids_no_match() {
+        let output = "  PID COMM\n  501 zsh\n 5678 node\n";
+        let pids = parse_ps_claude_pids(output);
+        assert!(pids.is_empty());
+    }
+
+    #[test]
+    fn test_parse_ps_claude_pids_empty() {
+        let pids = parse_ps_claude_pids("");
+        assert!(pids.is_empty());
+    }
+
+    #[test]
+    fn test_parse_ps_claude_pids_path_comm() {
+        // On some systems comm may show the full path
+        let output = "  PID COMM\n 1234 /usr/local/bin/claude\n";
+        let pids = parse_ps_claude_pids(output);
+        assert_eq!(pids, vec![1234]);
+    }
+
+    #[test]
+    fn test_parse_lsof_cwds_typical() {
+        let output = "p1234\nn/Users/daiki/Projects/my-app\np5678\nn/Users/daiki/Projects/other\n";
+        let cwds = parse_lsof_cwds(output);
+        assert_eq!(cwds.len(), 2);
+        assert!(cwds.contains("/Users/daiki/Projects/my-app"));
+        assert!(cwds.contains("/Users/daiki/Projects/other"));
+    }
+
+    #[test]
+    fn test_parse_lsof_cwds_empty() {
+        let cwds = parse_lsof_cwds("");
+        assert!(cwds.is_empty());
+    }
+
+    #[test]
+    fn test_parse_lsof_cwds_no_n_lines() {
+        let output = "p1234\np5678\n";
+        let cwds = parse_lsof_cwds(output);
+        assert!(cwds.is_empty());
+    }
+
+    #[test]
+    fn test_parse_lsof_cwds_deduplicates() {
+        let output = "p1234\nn/Users/daiki/Projects/app\np5678\nn/Users/daiki/Projects/app\n";
+        let cwds = parse_lsof_cwds(output);
+        assert_eq!(cwds.len(), 1);
+        assert!(cwds.contains("/Users/daiki/Projects/app"));
     }
 }
