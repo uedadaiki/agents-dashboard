@@ -28,6 +28,7 @@ Real-time monitoring dashboard for AI agents — tracks Claude Code sessions via
 - [Rust](https://rustup.rs/) (Edition 2021)
 - [Bun](https://bun.sh/)
 - [Claude Code](https://claude.ai/code) installed
+- **macOS only** (not tested on Linux/Windows)
 
 ## Getting Started
 
@@ -66,6 +67,13 @@ bun run build            # Build all packages
 bun run test:backend     # Run Rust backend tests
 bun run gen:types        # Generate TS types from Rust schemas
 ```
+
+## Known Limitations
+
+This project monitors Claude Code sessions by reading JSONL log files under `~/.claude/projects/`. The format of these log files is **not publicly documented** and may change without notice in any Claude Code update.
+
+- **State detection is heuristic-based** — the state machine infers session states (Idle, PermissionWaiting, Stopped, etc.) from observed log patterns, not from an official specification. False positives/negatives are possible and may not always be fixable.
+- **Breaking changes** — since the JSONL format is an internal implementation detail, any Claude Code update could change the log structure and break this dashboard without warning.
 
 ## Disclaimer
 
