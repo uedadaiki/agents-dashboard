@@ -2,7 +2,7 @@ use crate::types::AgentStateType;
 use super::jsonl_parser::{RawContentBlock, RawEntry, RawUserMessage};
 use chrono::{DateTime, Utc};
 
-const PERMISSION_WAIT_TIMEOUT_MS: i64 = 10_000;
+const PERMISSION_WAIT_TIMEOUT_MS: i64 = 30_000;
 const IDLE_TIMEOUT_MS: i64 = 10_000;
 const STOPPED_TIMEOUT_MS: i64 = 1_800_000; // 30 minutes
 const IDLE_STOPPED_TIMEOUT_MS: i64 = 1_800_000; // 30 minutes
@@ -156,8 +156,11 @@ pub fn process_entry(ctx: &mut StateContext, entry: &RawEntry) -> TransitionResu
     }
 
     // Progress entries → Running
+    // Progress entries indicate a tool is actively executing (approved),
+    // so clear tool_use flag to prevent false PermissionWaiting detection.
     if matches!(entry, RawEntry::Progress(_)) {
         ctx.state = AgentStateType::Running;
+        ctx.last_assistant_tool_use = false;
         ctx.last_assistant_text_only = false;
         return TransitionResult {
             new_state: ctx.state,
@@ -363,12 +366,25 @@ mod tests {
         let mut ctx = StateContext::new();
         ctx.state = AgentStateType::Running;
         ctx.last_assistant_tool_use = true;
-        // Set last_activity_at to 15 seconds ago
-        ctx.last_activity_at = Utc::now().timestamp_millis() - 15_000;
+        // Set last_activity_at to 35 seconds ago (past 30s threshold)
+        ctx.last_activity_at = Utc::now().timestamp_millis() - 35_000;
 
         let result = check_time_based_transitions(&mut ctx);
         assert_eq!(result.new_state, AgentStateType::PermissionWaiting);
         assert!(result.changed);
+    }
+
+    #[test]
+    fn test_no_permission_wait_before_timeout() {
+        let mut ctx = StateContext::new();
+        ctx.state = AgentStateType::Running;
+        ctx.last_assistant_tool_use = true;
+        // Set last_activity_at to 20 seconds ago (within 30s threshold)
+        ctx.last_activity_at = Utc::now().timestamp_millis() - 20_000;
+
+        let result = check_time_based_transitions(&mut ctx);
+        assert_eq!(result.new_state, AgentStateType::Running);
+        assert!(!result.changed);
     }
 
     #[test]
@@ -457,6 +473,51 @@ mod tests {
         });
         process_entry(&mut ctx, &entry);
         assert!(!ctx.last_assistant_text_only);
+    }
+
+    #[test]
+    fn test_progress_clears_tool_use_flag() {
+        let mut ctx = StateContext::new();
+        ctx.state = AgentStateType::Running;
+        ctx.last_assistant_tool_use = true;
+        let entry = RawEntry::Progress(RawProgressEntry {
+            parent_uuid: None,
+            data: None,
+            uuid: None,
+            timestamp: Some(Utc::now().to_rfc3339()),
+        });
+        process_entry(&mut ctx, &entry);
+        assert!(!ctx.last_assistant_tool_use);
+        assert_eq!(ctx.state, AgentStateType::Running);
+    }
+
+    #[test]
+    fn test_progress_prevents_permission_wait_false_positive() {
+        let mut ctx = StateContext::new();
+        // Simulate: assistant sent tool_use, then progress entry arrived
+        let tool_entry = make_assistant_entry(vec![RawContentBlock::ToolUse {
+            id: "t1".into(),
+            name: "Bash".into(),
+            input: json!({}),
+            caller: None,
+        }]);
+        process_entry(&mut ctx, &tool_entry);
+        assert!(ctx.last_assistant_tool_use);
+
+        // Progress entry arrives (tool is executing)
+        let progress_entry = RawEntry::Progress(RawProgressEntry {
+            parent_uuid: None,
+            data: None,
+            uuid: None,
+            timestamp: Some(Utc::now().to_rfc3339()),
+        });
+        process_entry(&mut ctx, &progress_entry);
+        assert!(!ctx.last_assistant_tool_use);
+
+        // Even after 35s of silence, should NOT transition to PermissionWaiting
+        ctx.last_activity_at = Utc::now().timestamp_millis() - 35_000;
+        let result = check_time_based_transitions(&mut ctx);
+        assert_ne!(result.new_state, AgentStateType::PermissionWaiting);
     }
 
     #[test]
