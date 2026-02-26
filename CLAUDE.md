@@ -1,7 +1,5 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 ## Commands
 
 ```bash
@@ -15,82 +13,19 @@ bun run gen:types        # Generate TS types from Rust schemas
 
 ## Architecture
 
-Monorepo with three packages:
+Monorepo: `packages/backend` (Rust/axum), `packages/shared` (generated TS types + cost calculator), `packages/frontend` (SvelteKit 5 SPA + Tailwind CSS 4).
 
-- **`packages/backend`** — Rust (axum + tokio) HTTP + WebSocket server. Watches JSONL log files, runs state machine, broadcasts events. Types defined with serde + schemars.
-- **`packages/shared`** — TypeScript types (generated from Rust JSON Schemas) and cost calculator. Imported by frontend via `@agents-dashboard/shared`.
-- **`packages/frontend`** — SvelteKit 5 SPA (adapter-static, ssr=false) + Tailwind CSS 4. Connects to backend WebSocket for real-time updates.
+Backend watches `~/.claude/projects/` JSONL log files, runs a state machine, and broadcasts events to the frontend via WebSocket.
 
-### Rust Backend Structure
+### Type generation
 
-```
-packages/backend/src/
-├── main.rs                      # Entry point (axum server)
-├── types.rs                     # Shared types (serde + schemars)
-├── cost.rs                      # Token cost calculation
-├── gen_schema.rs                # JSON Schema generation binary
-├── providers/
-│   ├── mod.rs                   # ProviderEvent enum
-│   └── claude_code/
-│       ├── mod.rs               # ClaudeCodeProvider
-│       ├── state_machine.rs     # State machine
-│       ├── session_discovery.rs # ~/.claude/projects/ scanner
-│       ├── file_watcher.rs      # notify + polling
-│       ├── jsonl_parser.rs      # JSONL parsing (RawEntry types)
-│       └── message_mapper.rs    # RawEntry → AgentMessage
-├── server/
-│   ├── http.rs                  # axum Router (API + SPA fallback)
-│   └── ws.rs                    # WebSocket handler (broadcast channels)
-└── session/
-    └── manager.rs               # SessionManager
-```
+Rust types (serde + schemars) → JSON Schema → `json-schema-to-typescript` → `packages/shared/src/types/generated.d.ts`. IMPORTANT: After changing Rust types in `types.rs`, run `bun run gen:types` to regenerate.
 
-### Type Sharing Pipeline
+## Gotchas
 
-Rust types (serde + schemars) → JSON Schema → `json-schema-to-typescript` → `packages/shared/src/types/generated.d.ts`
-
-### Data Flow
-
-```
-~/.claude/projects/<encoded-path>/<session-id>.jsonl
-  → SessionDiscovery (scans for new .jsonl files every 5s)
-  → FileWatcher (notify + 2s polling, incremental read with offset tracking)
-  → JSONL parser → State machine + Message mapper
-  → ClaudeCodeProvider (sends ProviderEvent via mpsc channel)
-  → SessionManager → broadcast::channel<ServerEvent>
-  → WebSocket handler (per-client tokio task) → Frontend
-```
-
-### State Machine (`state_machine.rs`)
-
-States: `Running` | `Idle` | `PermissionWaiting` | `Error` | `Stopped`
-
-- **→ Running**: any user/assistant/progress entry
-- **→ Idle**: `system:turn_duration` entry detected
-- **→ PermissionWaiting**: last entry was `assistant(tool_use)` + 10s silence
-- **→ Stopped**: 60s no activity while Running (Idle stays Idle)
-- **→ Error**: tool_result with `is_error: true`
-
-### WebSocket Protocol (`/ws`)
-
-Server→Client: `sessions:init`, `session:discovered`, `session:removed`, `session:state_changed`, `session:new_message`, `session:messages_init`, `session:usage_updated`
-
-Client→Server: `subscribe:session`, `unsubscribe:session` (messages are only sent for subscribed sessions)
-
-### WebSocket Architecture
-
-- **broadcast channel**: all clients (discovered, removed, state_changed, usage_updated)
-- **message channel**: subscription-filtered per client (new_message)
-- Each WS connection runs as independent tokio task with send/receive loops
-
-## Key Conventions
-
-- Backend uses axum with tokio for async HTTP + WebSocket on port 3001
-- Shared state via `Arc<RwLock<HashMap<...>>>` for thread-safe session storage
-- `#[serde(rename_all = "camelCase")]` ensures wire-format compatibility with frontend
-- `#[serde(tag = "type")]` for tagged union ServerEvent/ClientEvent serialization
-- Frontend auto-connects WebSocket at module load (not in `onMount` — Svelte 5/SvelteKit hydration issue)
-- Svelte 5 runes: stores use `$state` and `$derived` in `.svelte.ts` files
-- Backend keeps last 500 messages per session; frontend keeps last 200
-- Token costs calculated per-model using pricing table in both `cost.rs` and `cost-calculator.ts`
-- Session metadata (project name, working directory) extracted from JSONL `cwd` field, not from directory encoding
+- **Frontend WebSocket**: Auto-connects at module load, NOT in `onMount`. This is intentional — Svelte 5/SvelteKit hydration causes missed events if connected in `onMount`.
+- **Svelte 5 runes**: Stores use `$state` and `$derived` in `.svelte.ts` files. Do not use legacy Svelte store syntax.
+- **Serde attributes**: All Rust types use `#[serde(rename_all = "camelCase")]` and `#[serde(tag = "type")]` for tagged unions. Follow this convention for new types.
+- **Session metadata**: Extracted from the JSONL `cwd` field, not from directory path encoding.
+- **Message limits**: Backend keeps last 500 messages per session; frontend keeps last 200.
+- **Token costs**: Maintained in both `cost.rs` (backend) and `cost-calculator.ts` (shared) — keep them in sync when updating.
